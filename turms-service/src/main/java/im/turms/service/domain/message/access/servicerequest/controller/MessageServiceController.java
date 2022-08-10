@@ -206,7 +206,7 @@ public class MessageServiceController {
     public ClientRequestHandler handleQueryMessagesRequest() {
         return clientRequest -> {
             QueryMessagesRequest request = clientRequest.turmsRequest().getQueryMessagesRequest();
-            List<Long> idList = request.getIdsCount() > 0 ? request.getIdsList() : null;
+            List<Long> ids = request.getIdsCount() > 0 ? request.getIdsList() : null;
             Boolean areGroupMessages = request.hasAreGroupMessages() ? request.getAreGroupMessages() : null;
             Boolean areSystemMessages = request.hasAreSystemMessages() ? request.getAreSystemMessages() : null;
             Long fromId = request.hasFromId() ? request.getFromId() : null;
@@ -218,12 +218,13 @@ public class MessageServiceController {
             Long userId = clientRequest.userId();
             DateRange dateRange = DateRange.of(deliveryDateAfter, deliveryDateBefore);
             return messageService.authAndQueryCompleteMessages(
+                            userId,
                             true,
-                            idList,
+                            ids,
                             areGroupMessages,
                             areSystemMessages,
-                            fromId,
-                            userId,
+                            areGroupMessages ? null : fromId,
+                            areGroupMessages ? fromId : userId,
                             dateRange,
                             0,
                             size,
@@ -246,20 +247,21 @@ public class MessageServiceController {
                             List<Mono<MessagesWithTotal>> messagesWithTotalMonos = new ArrayList<>(conversationWithMessagesMap.size());
                             for (Map.Entry<MessageFromKey, Collection<Message>> entry : conversationWithMessagesMap.asMap().entrySet()) {
                                 MessageFromKey senderKey = entry.getKey();
+                                boolean isGroupMessage = senderKey.isGroupMessage();
                                 Mono<MessagesWithTotal> messagesWithTotalMono = messageService.countMessages(
                                                 null,
-                                                senderKey.isGroupMessage(),
+                                                isGroupMessage,
                                                 null,
-                                                Set.of(senderKey.fromId()),
-                                                Set.of(clientRequest.userId()),
+                                                isGroupMessage ? null : Set.of(senderKey.fromId()),
+                                                isGroupMessage ? Set.of(senderKey.fromId()) : Set.of(userId),
                                                 dateRange,
                                                 null)
                                         .map(total -> ClientMessagePool
                                                 .getMessagesWithTotalBuilder()
                                                 .setTotal(total.intValue())
-                                                .setIsGroupMessage(senderKey.isGroupMessage())
+                                                .setIsGroupMessage(isGroupMessage)
                                                 .setFromId(senderKey.fromId())
-                                                .addAllMessages(Collections2.transform(messages,
+                                                .addAllMessages(Collections2.transform(entry.getValue(),
                                                         m -> ProtoModelConvertor.message2proto(m).build()))
                                                 .build());
                                 messagesWithTotalMonos.add(messagesWithTotalMono);
